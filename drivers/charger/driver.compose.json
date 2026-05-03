@@ -1,0 +1,29 @@
+{
+  "name": {
+    "en": "Monta Charger"
+  },
+  "class": "evcharger",
+  "capabilities": [
+    "onoff",
+    "measure_power",
+    "meter_power",
+    "evcharger_charging_state"
+  ],
+  "pair": [
+    {
+      "id": "list_devices",
+      "template": "list_devices",
+      "navigation": {
+        "next": "add_devices"
+      }
+    },
+    {
+      "id": "add_devices",
+      "template": "add_devices"
+    }
+  ],
+  "images": {
+    "small": "/drivers/charger/assets/images/small.png",
+    "large": "/drivers/charger/assets/images/large.png"
+  }
+}

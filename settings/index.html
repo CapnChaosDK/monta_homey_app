@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Monta Settings</title>
+  <!--
+    This script is injected by Homey at runtime. It gives us the `Homey`
+    object that the code below uses to read/save settings.
+  -->
+  <script src="/homey.js" data-origin="settings"></script>
+</head>
+<body>
+
+  <h2>Monta credentials</h2>
+
+  <label for="clientId">Client ID</label><br>
+  <input type="text" id="clientId" autocomplete="off"><br><br>
+
+  <label for="clientSecret">Client Secret</label><br>
+  <input type="password" id="clientSecret" autocomplete="off"><br><br>
+
+  <label for="chargePointId">Charge Point ID</label><br>
+  <input type="text" id="chargePointId" autocomplete="off"><br><br>
+
+  <button onclick="saveSettings()">Save</button>
+  <p id="status"></p>
+
+  <script>
+    // Module-level variable so saveSettings() (a button handler) can reach
+    // the Homey object after onHomeyReady has run.
+    var _Homey;
+
+    /**
+     * Called automatically by Homey when the settings page is ready.
+     * We load the current values from Homey into the input fields.
+     */
+    function onHomeyReady(Homey) {
+      _Homey = Homey;
+
+      // Homey.get is callback-based: (key, function(err, value) { ... })
+      Homey.get('clientId', function(err, value) {
+        if (!err && value) {
+          document.getElementById('clientId').value = value;
+        }
+      });
+
+      Homey.get('clientSecret', function(err, value) {
+        if (!err && value) {
+          document.getElementById('clientSecret').value = value;
+        }
+      });
+
+      Homey.get('chargePointId', function(err, value) {
+        if (!err && value) {
+          document.getElementById('chargePointId').value = value;
+        }
+      });
+
+      // Tell Homey we're done loading — this dismisses the loading spinner.
+      Homey.ready();
+    }
+
+    /**
+     * Called when the user clicks Save.
+     * We save each field one after the other. If any save fails, we stop
+     * and show the error; otherwise we show "Saved!".
+     */
+    function saveSettings() {
+      var clientId = document.getElementById('clientId').value;
+      var clientSecret = document.getElementById('clientSecret').value;
+      var chargePointId = document.getElementById('chargePointId').value;
+
+      _Homey.set('clientId', clientId, function(err) {
+        if (err) {
+          showError(err);
+          return;
+        }
+
+        _Homey.set('clientSecret', clientSecret, function(err) {
+          if (err) {
+            showError(err);
+            return;
+          }
+
+          _Homey.set('chargePointId', chargePointId, function(err) {
+            if (err) {
+              showError(err);
+              return;
+            }
+            showSuccess('Saved!');
+          });
+        });
+      });
+    }
+
+    /**
+     * Small helper — write a success message to the status paragraph.
+     */
+    function showSuccess(message) {
+      var status = document.getElementById('status');
+      status.textContent = message;
+      status.style.color = 'green';
+    }
+
+    /**
+     * Small helper — write an error message to the status paragraph.
+     * 'err' can be an Error object or a plain string; we handle both.
+     */
+    function showError(err) {
+      var message = 'Unknown error';
+      if (err && err.message) {
+        message = err.message;
+      } else if (typeof err === 'string') {
+        message = err;
+      }
+      var status = document.getElementById('status');
+      status.textContent = 'Error: ' + message;
+      status.style.color = 'red';
+    }
+  </script>
+</body>
+</html>

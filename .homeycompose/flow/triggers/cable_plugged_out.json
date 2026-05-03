@@ -1,0 +1,13 @@
+{
+  "id": "cable_plugged_out",
+  "title": { "en": "Cable plugged out" },
+  "titleFormatted": { "en": "Cable plugged out" },
+  "hint": { "en": "Triggers when a cable is disconnected from the charger" },
+  "args": [
+    {
+      "type": "device",
+      "name": "device",
+      "filter": "driver_id=charger"
+    }
+  ]
+}

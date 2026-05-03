@@ -1,0 +1,104 @@
+{
+  "_comment": "This file is generated. Please edit .homeycompose/app.json instead.",
+  "id": "com.steen.monta",
+  "version": "1.0.0",
+  "compatibility": ">=12.4.5",
+  "sdk": 3,
+  "runtime": "nodejs",
+  "platforms": [
+    "local"
+  ],
+  "name": {
+    "en": "Monta Charge"
+  },
+  "description": {
+    "en": "Homemade Monta control"
+  },
+  "category": [
+    "energy"
+  ],
+  "permissions": [],
+  "images": {
+    "small": "/assets/images/small.png",
+    "large": "/assets/images/large.png",
+    "xlarge": "/assets/images/xlarge.png"
+  },
+  "author": {
+    "name": "Steen Nord",
+    "email": "steennord@gmail.com"
+  },
+  "flow": {
+    "triggers": [
+      {
+        "id": "cable_plugged_in",
+        "title": {
+          "en": "Cable plugged in"
+        },
+        "titleFormatted": {
+          "en": "Cable plugged in"
+        },
+        "hint": {
+          "en": "Triggers when a cable is connected to the charger"
+        },
+        "args": [
+          {
+            "type": "device",
+            "name": "device",
+            "filter": "driver_id=charger"
+          }
+        ]
+      },
+      {
+        "id": "cable_plugged_out",
+        "title": {
+          "en": "Cable plugged out"
+        },
+        "titleFormatted": {
+          "en": "Cable plugged out"
+        },
+        "hint": {
+          "en": "Triggers when a cable is disconnected from the charger"
+        },
+        "args": [
+          {
+            "type": "device",
+            "name": "device",
+            "filter": "driver_id=charger"
+          }
+        ]
+      }
+    ]
+  },
+  "drivers": [
+    {
+      "name": {
+        "en": "Monta Charger"
+      },
+      "class": "evcharger",
+      "capabilities": [
+        "onoff",
+        "measure_power",
+        "meter_power",
+        "evcharger_charging_state"
+      ],
+      "pair": [
+        {
+          "id": "list_devices",
+          "template": "list_devices",
+          "navigation": {
+            "next": "add_devices"
+          }
+        },
+        {
+          "id": "add_devices",
+          "template": "add_devices"
+        }
+      ],
+      "images": {
+        "small": "/drivers/charger/assets/images/small.png",
+        "large": "/drivers/charger/assets/images/large.png"
+      },
+      "id": "charger"
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "id": "com.steen.monta",
+  "version": "1.0.0",
+  "compatibility": ">=12.4.5",
+  "sdk": 3,
+  "runtime": "nodejs",
+  "platforms": [
+    "local"
+  ],
+  "name": {
+    "en": "Monta Charge"
+  },
+  "description": {
+    "en": "Homemade Monta control"
+  },
+  "category": [
+    "energy"
+  ],
+  "permissions": [
+  ],
+  "images": {
+    "small": "/assets/images/small.png",
+    "large": "/assets/images/large.png",
+    "xlarge": "/assets/images/xlarge.png"
+  },
+  "author": {
+    "name": "Steen Nord",
+    "email": "steennord@gmail.com"
+  }
+}

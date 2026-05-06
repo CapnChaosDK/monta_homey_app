@@ -201,7 +201,7 @@ module.exports = class ChargerDevice extends Homey.Device {
 
       // Step 7: push the lifetime meter reading straight into Homey.
       // This is the charger's built-in counter — no session math needed.
-      await this.setCapabilityValue('meter_power.charged', meterKwh);
+      await this.setCapabilityValue('meter_power', meterKwh);
 
       // Step 8: compute live watts from how much meterKwh grew since last poll.
       const watts = this.computeWatts(meterKwh);

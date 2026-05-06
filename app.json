@@ -78,9 +78,13 @@
       "capabilities": [
         "onoff",
         "measure_power",
-        "meter_power",
+        "meter_power.charged",
         "evcharger_charging_state"
       ],
+      "energy": {
+        "evCharger": true,
+        "meterPowerImportedCapability": "meter_power.charged"
+      },
       "pair": [
         {
           "id": "list_devices",

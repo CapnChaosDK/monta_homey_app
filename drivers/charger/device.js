@@ -5,7 +5,10 @@ const Homey = require('homey');
 // How often we ask Monta for an update, in milliseconds.
 // 1 * 60 * 1000 = 60000 ms = 1 minute. Same cadence as the old flow.
 // TODO, consider to add this to device settings
-const POLL_INTERVAL_MS = 1 * 60 * 1000;
+const POLL_INTERVAL_MINUTES = 1;
+const MILLISECONDS_PER_MINUTE = 60 * 1000;
+const POLL_INTERVAL_MS = POLL_INTERVAL_MINUTES * MILLISECONDS_PER_MINUTE;
+
 
 module.exports = class ChargerDevice extends Homey.Device {
 
@@ -26,7 +29,7 @@ module.exports = class ChargerDevice extends Homey.Device {
 
     // Then repeat every POLL_INTERVAL_MS. setInterval returns a handle we
     // keep so we can cancel it later in onUninit.
-    this.pollInterval = setInterval(() => {
+    this.pollInterval = this.homey.setInterval(() => {
       this.pollStatus();
     }, POLL_INTERVAL_MS);
 
@@ -77,7 +80,7 @@ module.exports = class ChargerDevice extends Homey.Device {
     const data = this.getData();
     const chargePointId = data.id;
     const token = await this.homey.app.getAccessToken();
-    const sessionID = await this.fetchSessionId;
+    const sessionID = await this.fetchSessionId();
 
     if (!token) {
       this.log('No token available yet, cannot stop charge');
@@ -254,7 +257,7 @@ module.exports = class ChargerDevice extends Homey.Device {
 
 
       // Step 8.5: add the active session status for e.g. paused state detection
-      const sessionState = await this.fetchSessionState
+      const sessionState = await this.fetchSessionState();
 
       // Step 9: translate Monta's state + cable flag into Homey's enum.
       const chargingState = this.mapChargePointState(montaState, cablePluggedIn, sessionState);
@@ -344,7 +347,7 @@ module.exports = class ChargerDevice extends Homey.Device {
   // Cancel the poll if app is removed
   async onUninit() {
     if (this.pollInterval) {
-      clearInterval(this.pollInterval);
+      this.homey.clearInterval(this.pollInterval);
       this.pollInterval = null;
     }
   }

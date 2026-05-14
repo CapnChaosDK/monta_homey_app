@@ -4,14 +4,12 @@ const Homey = require('homey');
 
 // How often we ask Monta for an update, in milliseconds.
 // 1 * 60 * 1000 = 60000 ms = 1 minute. Same cadence as the old flow.
+// TODO, consider to add this to device settings
 const POLL_INTERVAL_MS = 1 * 60 * 1000;
 
 module.exports = class ChargerDevice extends Homey.Device {
 
-  /**
-   * Called once by Homey when this device is added or Homey restarts.
-   * We set up our state and start the poll loop.
-   */
+  // Method called when device had been added
   async onInit() {
     this.log('Charger device initialized:', this.getName());
 
@@ -20,10 +18,10 @@ module.exports = class ChargerDevice extends Homey.Device {
     this.lastKwhHistory = [];
     this.maxWattagePoints = 3; // how many historical points to keep for wattage calculation
     
+    // Edge detection for the trigger cards
     this.lastCablePluggedIn = null;
 
-    // Do a first poll right away so the device shows real values quickly.
-    // pollStatus handles its own errors — we don't need a .catch here.
+    // Do a first poll right away so the device shows real values after boot
     this.pollStatus();
 
     // Then repeat every POLL_INTERVAL_MS. setInterval returns a handle we
@@ -46,11 +44,7 @@ module.exports = class ChargerDevice extends Homey.Device {
   }
 
   async startCharge() {
-    // We could check the current state here and skip if we're already charging,
-    // but it's simpler to just call the API and let it handle that logic. If
-    // we're already charging, Monta will just ignore the request — no harm
-    // done, and we don't have to worry about keeping our state perfectly in
-    // sync with Monta's.
+    // Call the monta API for start charge. If already charging we will get an error in the response
     const data = this.getData();
     const chargePointId = data.id;
     const token = await this.homey.app.getAccessToken();
@@ -83,42 +77,15 @@ module.exports = class ChargerDevice extends Homey.Device {
     const data = this.getData();
     const chargePointId = data.id;
     const token = await this.homey.app.getAccessToken();
+    const sessionID = await this.fetchSessionId;
 
     if (!token) {
       this.log('No token available yet, cannot stop charge');
       return;
     }
 
-    // This part is to fetch the session ID, TODO refactor this to function
-    const sessionResponse = await fetch(`https://public-api.monta.com/api/v1/charges?chargePointId=${chargePointId}`,
-      {
-        method: 'GET',
-        headers: {
-          'accept': 'application/json',
-          'authorization': `Bearer ${token}`
-        }}
-      );
-    // If there is an error fetching
-    if (!sessionResponse.ok) {
-      const body = await sessionResponse.text();
-      throw new Error(`Monta API ${sessionResponse.status}: ${body}`);
-    }
-      
-
-    //const activeSession = await sessionResponse.json();
-    const rawText = await sessionResponse.text();
-    const match = rawText.match(/"id":(\d+)/);
-    const rawId = match ? match[1] : null; 
-
-    if (rawId === null) {
-      this.log('No active session to stop');
-      return;
-    }
-
-    this.log('Active session ID:', rawId);
-
     // Endpoint to stop a session: POST /charges/{chargeId}/stop
-    const url = `https://public-api.monta.com/api/v1/charges/${rawId}/stop`;
+    const url = `https://public-api.monta.com/api/v1/charges/${sessionID}/stop`;
     const options = {
       method: 'POST',
       headers: {
@@ -130,6 +97,84 @@ module.exports = class ChargerDevice extends Homey.Device {
     if (!response.ok) {
       throw new Error(`Failed to stop charge: ${response.status} ${await response.text()}`);
     }
+  }
+
+
+// Fetch the currect session ID
+  async fetchSessionId() {
+    this.log('Session ID fetch requested');
+    const data = this.getData();
+    const chargePointId = data.id;
+    const token = await this.homey.app.getAccessToken();
+
+    if (!token) {
+      this.log('No token available yet, cannot start charge');
+      return;
+    }
+
+    const sessionResponse = await fetch(`https://public-api.monta.com/api/v1/charges?chargePointId=${chargePointId}`,
+      {
+        method: 'GET',
+        headers: {
+          'accept': 'application/json',
+          'authorization': `Bearer ${token}`
+        }}
+      );
+
+    // If there is an error fetching
+    if (!sessionResponse.ok) {
+      const body = await sessionResponse.text();
+      throw new Error(`Monta API ${sessionResponse.status}: ${body}`);
+    }
+      
+    // using the raw text as the returned session ID is int64 which is an issue in JavaScript
+    const rawText = await sessionResponse.text();
+    const match = rawText.match(/"id":(\d+)/);
+    const rawId = match ? match[1] : null; 
+
+    if (rawId === null) {
+      this.log('No active session to stop');
+      return;
+    }
+
+    this.log('Active session ID:', rawId);
+    return rawId;
+  }
+
+  async fetchSessionState() {
+    this.log('Session state fetch requested');
+    const data = this.getData();
+    const chargePointId = data.id;
+    const token = await this.homey.app.getAccessToken();
+
+    if (!token) {
+      this.log('No token available yet, cannot start charge');
+      return;
+    }
+    const sessionResponse = await fetch(`https://public-api.monta.com/api/v1/charges?chargePointId=${chargePointId}&page=0&perPage=1`,
+      {
+        method: 'GET',
+        headers: {
+          'accept': 'application/json',
+          'authorization': `Bearer ${token}`
+        }}
+    );
+    // If there is an error fetching
+    if (!sessionResponse.ok) {
+      const body = await sessionResponse.text();
+      throw new Error(`Monta API ${sessionResponse.status}: ${body}`);
+    }
+    
+    //const activeSession = await sessionResponse.json();
+    const { data: activeSession } = await sessionResponse.json();
+    let sessionState = null;
+    if (activeSession.length === 0) {
+      this.log('No active session found for this charge point');
+    } else {
+      sessionState = activeSession[0].state;
+      this.log('Active session:', activeSession[0].state);
+    }
+    return sessionState;
   }
 
   /**
@@ -209,31 +254,7 @@ module.exports = class ChargerDevice extends Homey.Device {
 
 
       // Step 8.5: add the active session status for e.g. paused state detection
-      const sessionResponse = await fetch(`https://public-api.monta.com/api/v1/charges?chargePointId=${chargePointId}&page=0&perPage=1`,
-        {
-          method: 'GET',
-          headers: {
-            'accept': 'application/json',
-            'authorization': `Bearer ${token}`
-          }}
-      );
-      // If there is an error fetching
-      if (!sessionResponse.ok) {
-        const body = await sessionResponse.text();
-        throw new Error(`Monta API ${sessionResponse.status}: ${body}`);
-      }
-      
-
-      //const activeSession = await sessionResponse.json();
-      const { data: activeSession } = await sessionResponse.json();
-      let sessionState = null;
-      if (activeSession.length === 0) {
-        this.log('No active session found for this charge point');
-      } else {
-        sessionState = activeSession[0].state;
-      }
-
-      this.log('Active session:', activeSession[0].state);
+      const sessionState = await this.fetchSessionState
 
       // Step 9: translate Monta's state + cable flag into Homey's enum.
       const chargingState = this.mapChargePointState(montaState, cablePluggedIn, sessionState);
@@ -263,13 +284,7 @@ module.exports = class ChargerDevice extends Homey.Device {
     }
   }
 
-  /**
-   * Given the latest meter reading in kWh, compute the current power draw
-   * in watts, based on how much the reading grew since the last poll.
-   *
-   * Unchanged from before — the maths works the same whether the kWh value
-   * comes from a session or from the charger's lifetime meter.
-   */
+  // TODO may wish to add a sliding window to smooth the wattage calculation
   computeWatts(currentKwh) {
     const now = Date.now();
 
@@ -302,30 +317,19 @@ module.exports = class ChargerDevice extends Homey.Device {
     }
 
     return Math.round(watts);
-  }
+  }  
 
-  /**
-   * Translate Monta's charge-point state + cablePluggedIn flag into one of
-   * the four values Homey's evcharger_charging_state capability accepts:
-   *   plugged_out, plugged_in, plugged_in_charging, plugged_in_paused.
-   *
-   * Strategy:
-   *   - cablePluggedIn is the most reliable physical signal we get, so it
-   *     wins: no cable means plugged_out, whatever the state field says.
-   */
+  // Mapping function from Monta API to Homey defined states for an EV
   mapChargePointState(montaState, cablePluggedIn, sessionState) {
-    // No cable → always plugged_out. This catches the "session completed
-    // but car still plugged in" false-negative we had before: now it's the
-    // other way around — we trust the cable flag over anything else.
+    // If no cable detected
     if (!cablePluggedIn) {
       return 'plugged_out';
     }
 
-    // Normalise case so 'BUSY-CHARGING' etc. still match if Monta ever
-    // changes casing. The docs list only lowercase, but it's cheap insurance.
+    // Secure the case
     const state = (montaState || '').toLowerCase();
 
-    // The one unambiguous "power flowing" state from Monta's enum.
+    // If plugged in, determine if we are charging or paused by the car
     if (state === 'busy-charging' && sessionState === 'charging') {
       return 'plugged_in_charging';
     }
@@ -334,19 +338,10 @@ module.exports = class ChargerDevice extends Homey.Device {
      }
 
     // Cable plugged in, not charging. Covers:
-    //   busy, busy-blocked, busy-non-charging, busy-non-released,
-    //   busy-reserved, busy-scheduled   — a session exists but idle
-    //   available                        — odd combo, cable wins
-    //   error, disconnected, passive, other — unexpected, but safer to
-    //                                        say plugged_in than lie and
-    //                                        say plugged_out.
     return 'plugged_in';
   }
-
-  /**
-   * Called by Homey when this device is removed or the app stops.
-   * Cancel the poll loop so we don't keep running in the background.
-   */
+  
+  // Cancel the poll if app is removed
   async onUninit() {
     if (this.pollInterval) {
       clearInterval(this.pollInterval);

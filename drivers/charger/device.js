@@ -77,8 +77,6 @@ module.exports = class ChargerDevice extends Homey.Device {
 
   async stopCharge() {
     this.log('Stop charge requested');
-    const data = this.getData();
-    const chargePointId = data.id;
     const token = await this.homey.app.getAccessToken();
     const sessionID = await this.fetchSessionId();
 

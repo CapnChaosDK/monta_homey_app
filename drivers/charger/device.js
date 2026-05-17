@@ -19,7 +19,7 @@ module.exports = class ChargerDevice extends Homey.Device {
     // These two remember the previous meter reading so we can compute the
     // current power draw (in watts) from how fast the reading is growing.
     this.lastKwhHistory = [];
-    this.maxWattagePoints = 3; // how many historical points to keep for wattage calculation
+    this.maxWattagePoints = 5; // how many historical points to keep for wattage calculation
     
     // Edge detection for the trigger cards
     this.lastCablePluggedIn = null;
@@ -285,7 +285,7 @@ module.exports = class ChargerDevice extends Homey.Device {
     }
   }
 
-  // TODO may wish to add a sliding window to smooth the wattage calculation
+  // Calculate and average wattage based on the constant maxWattagePoints
   computeWatts(currentKwh) {
     const now = Date.now();
 

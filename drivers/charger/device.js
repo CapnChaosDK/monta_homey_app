@@ -2,12 +2,10 @@
 
 const Homey = require('homey');
 
-// How often we ask Monta for an update, in milliseconds.
-// 1 * 60 * 1000 = 60000 ms = 1 minute. Same cadence as the old flow.
-// TODO, consider to add this to device settings
-const POLL_INTERVAL_MINUTES = 1;
+// Fallback polling interval. The Homey device setting is the normal source
+// of truth; this is only used if the setting is missing or invalid.
+const DEFAULT_POLL_INTERVAL_MINUTES = 1;
 const MILLISECONDS_PER_MINUTE = 60 * 1000;
-const POLL_INTERVAL_MS = POLL_INTERVAL_MINUTES * MILLISECONDS_PER_MINUTE;
 
 
 class ChargerDevice extends Homey.Device {
@@ -27,15 +25,8 @@ class ChargerDevice extends Homey.Device {
     // Do a first poll right away so the device shows real values after boot
     this.pollStatus();
 
-    // Then repeat every POLL_INTERVAL_MS. setInterval returns a handle we
-    // keep so we can cancel it later in onUninit.
-
-    const pollIntervalSetting = this.getSettings();
-    this.log('The poll interval is set as:', pollIntervalSetting.poll_interval);
-
-    this.pollInterval = this.homey.setInterval(() => {
-      this.pollStatus();
-    }, POLL_INTERVAL_MS);
+    // call startPolling with the default value to initialize the interval with the default value
+    this.startPolling(this.getSettings().poll_interval);
 
     // Activate the on off capability so it shows up in the app.
     this.registerCapabilityListener('onoff', async (value) => {
@@ -77,6 +68,26 @@ class ChargerDevice extends Homey.Device {
     if (!response.ok) {
       throw new Error(`Failed to start charge: ${response.status} ${await response.text()}`);
     }
+  }
+
+
+  // If there are no value passed to the function, revert to using default
+  startPolling(pollIntervalMinutes = DEFAULT_POLL_INTERVAL_MINUTES) {
+    if (this.pollInterval) {
+      this.homey.clearInterval(this.pollInterval);
+      this.pollInterval = null;
+    }
+
+    // The default parameter above only applies when no value/undefined is
+    // passed. This fallback also protects against invalid values.
+    const minutes = Number(pollIntervalMinutes) || DEFAULT_POLL_INTERVAL_MINUTES;
+    const pollIntervalMs = minutes * MILLISECONDS_PER_MINUTE;
+
+    this.log('The poll interval is set as:', minutes);
+
+    this.pollInterval = this.homey.setInterval(() => {
+      this.pollStatus();
+    }, pollIntervalMs);
   }
 
   async stopCharge() {
@@ -351,7 +362,10 @@ class ChargerDevice extends Homey.Device {
     this.log('Settings changed:', changedKeys);
     this.log('New settings:', newSettings);
     this.log('Old settings:', oldSettings);
-    this.log('It became:', newSettings.poll_interval);
+
+    if (changedKeys.includes('poll_interval')) {
+      this.startPolling(newSettings.poll_interval);
+    }
   }
 
   // Cancel the poll if app is removed

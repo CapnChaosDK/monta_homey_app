@@ -1,0 +1,11 @@
+[
+  {
+    "id": "poll_interval",
+    "type": "number",
+    "label": { "en": "Minutes between API poll" },
+    "value": 1,
+    "min": 1,
+    "max": 5,
+    "units": { "en": "minutes"}
+  }
+]

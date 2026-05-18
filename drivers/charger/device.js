@@ -10,7 +10,7 @@ const MILLISECONDS_PER_MINUTE = 60 * 1000;
 const POLL_INTERVAL_MS = POLL_INTERVAL_MINUTES * MILLISECONDS_PER_MINUTE;
 
 
-module.exports = class ChargerDevice extends Homey.Device {
+class ChargerDevice extends Homey.Device {
 
   // Method called when device had been added
   async onInit() {
@@ -29,6 +29,10 @@ module.exports = class ChargerDevice extends Homey.Device {
 
     // Then repeat every POLL_INTERVAL_MS. setInterval returns a handle we
     // keep so we can cancel it later in onUninit.
+
+    const pollIntervalSetting = this.getSettings();
+    this.log('The poll interval is set as:', pollIntervalSetting.poll_interval);
+
     this.pollInterval = this.homey.setInterval(() => {
       this.pollStatus();
     }, POLL_INTERVAL_MS);
@@ -342,6 +346,14 @@ module.exports = class ChargerDevice extends Homey.Device {
     return 'plugged_in';
   }
   
+
+  async onSettings({ newSettings, oldSettings, changedKeys }) {
+    this.log('Settings changed:', changedKeys);
+    this.log('New settings:', newSettings);
+    this.log('Old settings:', oldSettings);
+    this.log('It became:', newSettings.poll_interval);
+  }
+
   // Cancel the poll if app is removed
   async onUninit() {
     if (this.pollInterval) {
@@ -349,4 +361,6 @@ module.exports = class ChargerDevice extends Homey.Device {
       this.pollInterval = null;
     }
   }
-};
+}
+
+module.exports = ChargerDevice;

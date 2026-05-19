@@ -199,6 +199,8 @@ class ChargerDevice extends Homey.Device {
    * called from setInterval where nothing would catch a rejection.
    */
   async pollStatus() {
+
+    // TODO: consider only to fetch if we are charging or at least the cable is plugged in
     // Step 1: figure out which charge point we are.
     // getData() returns the object we stored during pairing.
     const data = this.getData();
@@ -234,6 +236,12 @@ class ChargerDevice extends Homey.Device {
       // object directly — no { data: [ ... ] } wrapper to unwrap.
       const chargePoint = await response.json();
 
+
+      // cablePluggedIn is a boolean. `=== true` means: treat null/undefined
+      // as "not plugged in", never accidentally as truthy.
+      const cablePluggedIn = chargePoint.cablePluggedIn === true;
+
+
       // Step 6: read the fields we care about, defending against nulls.
       // lastMeterReadingKwh is typed "double | null" in the Monta docs,
       // so only trust it if it's actually a number.
@@ -242,9 +250,6 @@ class ChargerDevice extends Homey.Device {
         meterKwh = chargePoint.lastMeterReadingKwh;
       }
 
-      // cablePluggedIn is a boolean. `=== true` means: treat null/undefined
-      // as "not plugged in", never accidentally as truthy.
-      const cablePluggedIn = chargePoint.cablePluggedIn === true;
 
       // Control the trigger cards
       // When car has been connected

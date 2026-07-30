@@ -14,10 +14,11 @@ class ChargerDevice extends Homey.Device {
   async onInit() {
     this.log('Charger device initialized:', this.getName());
 
-    // These two remember the previous meter reading so we can compute the
-    // current power draw (in watts) from how fast the reading is growing.
+    // Remember recent session consumption readings so we can compute the
+    // current power draw from how quickly consumedKwh is growing.
     this.lastKwhHistory = [];
     this.maxWattagePoints = 5; // how many historical points to keep for wattage calculation
+    this.wattageChargeId = null;
     
     // Edge detection for the trigger cards
     this.lastCablePluggedIn = null;
@@ -157,16 +158,9 @@ class ChargerDevice extends Homey.Device {
     return rawId;
   }
 
-  async fetchSessionState() {
-    this.log('Session state fetch requested');
-    const data = this.getData();
-    const chargePointId = data.id;
-    const token = await this.homey.app.getAccessToken();
+  async fetchCurrentCharge(token, chargePointId) {
+    this.log('Current charge fetch requested');
 
-    if (!token) {
-      this.log('No token available yet, cannot start charge');
-      return;
-    }
     const sessionResponse = await fetch(`https://public-api.monta.com/api/v1/charges?chargePointId=${chargePointId}&page=0&perPage=1`,
       {
         method: 'GET',
@@ -180,17 +174,38 @@ class ChargerDevice extends Homey.Device {
       const body = await sessionResponse.text();
       throw new Error(`Monta API ${sessionResponse.status}: ${body}`);
     }
-    
-    //const activeSession = await sessionResponse.json();
-    const { data: activeSession } = await sessionResponse.json();
-    let sessionState = null;
-    if (activeSession.length === 0) {
-      this.log('No active session found for this charge point');
-    } else {
-      sessionState = activeSession[0].state;
-      this.log('Active session:', activeSession[0].state);
+
+    // Charge IDs are int64 values. Quote them before JSON.parse so JavaScript
+    // cannot silently round an ID that is larger than Number.MAX_SAFE_INTEGER.
+    const rawList = await sessionResponse.text();
+    const safeList = rawList.replace(/("id"\s*:\s*)(\d+)/g, '$1"$2"');
+    const { data: charges } = JSON.parse(safeList);
+
+    if (!Array.isArray(charges) || charges.length === 0) {
+      this.log('No charge found for this charge point');
+      return null;
     }
-    return sessionState;
+
+    const chargeId = String(charges[0].id);
+    const chargeResponse = await fetch(`https://public-api.monta.com/api/v1/charges/${chargeId}`, {
+      method: 'GET',
+      headers: {
+        'accept': 'application/json',
+        'authorization': `Bearer ${token}`
+      }
+    });
+
+    if (!chargeResponse.ok) {
+      const body = await chargeResponse.text();
+      throw new Error(`Monta API ${chargeResponse.status}: ${body}`);
+    }
+
+    const charge = await chargeResponse.json();
+    // Use the lossless ID obtained from the list response rather than the
+    // potentially rounded numeric ID returned by response.json().
+    charge.id = chargeId;
+    this.log('Current charge:', charge.state, chargeId);
+    return charge;
   }
 
   /**
@@ -269,19 +284,27 @@ class ChargerDevice extends Homey.Device {
       // This is the charger's built-in counter — no session math needed.
       await this.setCapabilityValue('meter_power', meterKwh);
 
-      // Step 8: compute live watts from how much meterKwh grew since last poll.
-      const watts = this.computeWatts(meterKwh);
+      // Step 8: retrieve the latest charge. The detailed charge response is
+      // the source of truth for both session state and consumedKwh.
+      const currentCharge = await this.fetchCurrentCharge(token, chargePointId);
+      const sessionState = currentCharge ? currentCharge.state : null;
+
+      // Step 9: calculate live watts from the change in session consumption.
+      // Inactive sessions cannot be drawing charging power, so reset their
+      // history and report zero immediately.
+      let watts = 0;
+      if (currentCharge && sessionState === 'charging') {
+        watts = this.computeWatts(currentCharge.consumedKwh, currentCharge.id);
+      } else {
+        this.resetWattageHistory();
+      }
       await this.setCapabilityValue('measure_power', watts);
 
-
-      // Step 8.5: add the active session status for e.g. paused state detection
-      const sessionState = await this.fetchSessionState();
-
-      // Step 9: translate Monta's state + cable flag into Homey's enum.
+      // Step 10: translate Monta's state + cable flag into Homey's enum.
       const chargingState = this.mapChargePointState(montaState, cablePluggedIn, sessionState);
       await this.setCapabilityValue('evcharger_charging_state', chargingState);
 
-      // Step 10: onoff mirrors "are we actively delivering power right now?".
+      // Step 11: onoff mirrors "are we actively delivering power right now?".
   
       await this.setCapabilityValue('onoff', chargingState === 'plugged_in_charging' || chargingState === 'plugged_in_paused');
 
@@ -305,11 +328,27 @@ class ChargerDevice extends Homey.Device {
     }
   }
 
-  // Calculate and average wattage based on the constant maxWattagePoints
-  computeWatts(currentKwh) {
+  resetWattageHistory() {
+    this.lastKwhHistory = [];
+    this.wattageChargeId = null;
+  }
+
+  // Calculate and average wattage from a charge session's consumedKwh.
+  computeWatts(consumedKwh, chargeId) {
+    if (typeof consumedKwh !== 'number' || !Number.isFinite(consumedKwh)) {
+      this.resetWattageHistory();
+      return 0;
+    }
+
+    const normalizedChargeId = String(chargeId);
+    if (this.wattageChargeId !== normalizedChargeId) {
+      this.lastKwhHistory = [];
+      this.wattageChargeId = normalizedChargeId;
+    }
+
     const now = Date.now();
 
-    this.lastKwhHistory.push({kwh: currentKwh, at: now});
+    this.lastKwhHistory.push({ kwh: consumedKwh, at: now });
 
     if (this.lastKwhHistory.length > this.maxWattagePoints) {
       this.lastKwhHistory.shift();
@@ -330,10 +369,10 @@ class ChargerDevice extends Homey.Device {
     // kWh / hours = kW; multiply by 1000 to get watts.
     const watts = (deltaKwh / deltaHours) * 1000;
 
-    // The lifetime meter should only ever grow, but a firmware reset or
-    // meter replacement could make it jump backwards. Clamp to 0 so we
-    // never report negative power.
-    if (watts < 0) {
+    // A session counter should not decrease. If it does, start a fresh window
+    // so several subsequent polls are not compared with an invalid baseline.
+    if (watts < 0 || !Number.isFinite(watts)) {
+      this.lastKwhHistory = [{ kwh: consumedKwh, at: now }];
       return 0;
     }
 
